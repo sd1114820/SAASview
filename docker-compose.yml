@@ -1,0 +1,166 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库服务
+  postgres:
+    image: postgres:15-alpine
+    container_name: timezone-demo-postgres
+    environment:
+      POSTGRES_DB: timezone_demo
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_INITDB_ARGS: "--timezone=UTC"
+      TZ: UTC
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d
+    networks:
+      - timezone-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d timezone_demo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Go 应用服务
+  app:
+    build:
+      context: ./go
+      dockerfile: Dockerfile
+    container_name: timezone-demo-app
+    environment:
+      # 数据库配置
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: timezone_demo
+      DB_SSLMODE: disable
+      DB_TIMEZONE: UTC
+      # 应用配置
+      PORT: 8080
+      GIN_MODE: release
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - timezone-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # pgAdmin 数据库管理工具（可选）
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: timezone-demo-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - timezone-network
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    restart: unless-stopped
+    profiles:
+      - tools  # 使用 --profile tools 来启动
+
+  # Redis 缓存服务（可选，用于演示缓存时区数据）
+  redis:
+    image: redis:7-alpine
+    container_name: timezone-demo-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - timezone-network
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    profiles:
+      - cache  # 使用 --profile cache 来启动
+
+# 网络配置
+networks:
+  timezone-network:
+    driver: bridge
+    name: timezone-demo-network
+
+# 数据卷配置
+volumes:
+  postgres_data:
+    name: timezone-demo-postgres-data
+    driver: local
+  pgadmin_data:
+    name: timezone-demo-pgadmin-data
+    driver: local
+  redis_data:
+    name: timezone-demo-redis-data
+    driver: local
+
+# 扩展配置
+x-common-variables: &common-variables
+  TZ: UTC
+  LANG: en_US.UTF-8
+  LC_ALL: en_US.UTF-8
+
+# 开发环境覆盖配置（示例，建议放到单独的 docker-compose.dev.yml 中使用）
+# 使用: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# 以下内容仅供参考：
+# services:
+#   app-dev:
+#     extends:
+#       service: app
+#     environment:
+#       <<: *common-variables
+#       GIN_MODE: debug
+#       LOG_LEVEL: debug
+#     volumes:
+#       - ./go:/app:cached
+#     command: |
+#       sh -c '
+#         echo "🔄 开发模式启动中..."
+#         go mod tidy
+#         go run main.go
+#       '
+#     profiles:
+#       - dev
+
+# 生产环境配置示例
+# services:
+#   app-prod:
+#     extends:
+#       service: app
+#     environment:
+#       <<: *common-variables
+#       GIN_MODE: release
+#       LOG_LEVEL: info
+#     deploy:
+#       replicas: 2
+#       resources:
+#         limits:
+#           cpus: '0.5'
+#           memory: 512M
+#         reservations:
+#           cpus: '0.25'
+#           memory: 256M
+#     profiles:
+#       - prod

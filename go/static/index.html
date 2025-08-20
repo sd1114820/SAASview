@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>时区处理演示 API</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+        }
+        .api-list {
+            display: grid;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        .api-item {
+            padding: 15px;
+            border: 1px solid #e1e5e9;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+        .api-method {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #28a745;
+            color: white;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .api-path {
+            font-family: 'Courier New', monospace;
+            color: #495057;
+            margin-left: 10px;
+        }
+        .description {
+            margin-top: 8px;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e1e5e9;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🌍 时区处理演示 API</h1>
+        <p>SAAS多租户时区处理解决方案</p>
+    </div>
+
+    <div class="content">
+        <h2>📋 可用的 API 端点</h2>
+        <div class="api-list">
+            <div class="api-item">
+                <span class="api-method">GET</span>
+                <span class="api-path">/api/health</span>
+                <div class="description">健康检查接口</div>
+            </div>
+            <div class="api-item">
+                <span class="api-method">GET</span>
+                <span class="api-path">/api/docs</span>
+                <div class="description">API 文档和使用说明</div>
+            </div>
+            <div class="api-item">
+                <span class="api-method">GET</span>
+                <span class="api-path">/api/timezone/demo</span>
+                <div class="description">时区转换演示</div>
+            </div>
+            <div class="api-item">
+                <span class="api-method">GET</span>
+                <span class="api-path">/api/timezone/merchants</span>
+                <div class="description">获取商户列表</div>
+            </div>
+            <div class="api-item">
+                <span class="api-method">GET</span>
+                <span class="api-path">/api/timezone/orders</span>
+                <div class="description">获取订单数据（支持时区转换）</div>
+            </div>
+            <div class="api-item">
+                <span class="api-method">GET</span>
+                <span class="api-path">/api/timezone/analysis</span>
+                <div class="description">获取订单分析数据</div>
+            </div>
+            <div class="api-item">
+                <span class="api-method">GET</span>
+                <span class="api-path">/api/timezone/compare</span>
+                <div class="description">时区对比功能</div>
+            </div>
+        </div>
+
+        <h2>🚀 快速开始</h2>
+        <p>这是一个演示多租户时区处理的后端 API 服务。所有接口都支持跨域访问，可以直接在浏览器中测试。</p>
+        
+        <h3>示例请求：</h3>
+        <ul>
+            <li><a href="/api/health" target="_blank">检查服务状态</a></li>
+            <li><a href="/api/docs" target="_blank">查看详细文档</a></li>
+            <li><a href="/api/timezone/merchants" target="_blank">获取商户列表</a></li>
+        </ul>
+    </div>
+
+    <div class="footer">
+        <p>© 2024 时区处理演示项目 | 技术栈: Go + PostgreSQL + Docker</p>
+    </div>
+</body>
+</html>
