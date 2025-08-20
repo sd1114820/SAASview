@@ -135,12 +135,13 @@ curl "http://localhost:8080/api/timezone/compare?utc_time=2024-08-19T00:00:00Z"
 #### 商户维度表 (dim_merchant)
 ```sql
 CREATE TABLE dim_merchant (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    timezone VARCHAR(50) NOT NULL,  -- 商户时区
+    merchant_id SERIAL PRIMARY KEY,
+    merchant_name VARCHAR(100) NOT NULL,
+    merchant_code VARCHAR(50) UNIQUE NOT NULL,
+    timezone VARCHAR(50) NOT NULL DEFAULT 'UTC',  -- 商户时区
     country VARCHAR(50) NOT NULL,
     city VARCHAR(50) NOT NULL,
-    description TEXT,
+    status VARCHAR(20) DEFAULT 'active',
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
@@ -149,13 +150,17 @@ CREATE TABLE dim_merchant (
 #### 订单事实表 (dws_orders)
 ```sql
 CREATE TABLE dws_orders (
-    id SERIAL PRIMARY KEY,
-    merchant_id INTEGER REFERENCES dim_merchant(id),
-    order_number VARCHAR(50) UNIQUE NOT NULL,
-    amount DECIMAL(10,2) NOT NULL,
+    order_id SERIAL PRIMARY KEY,
+    order_no VARCHAR(50) UNIQUE NOT NULL,
+    merchant_id INTEGER NOT NULL REFERENCES dim_merchant(merchant_id),
+    order_amount DECIMAL(15,2) NOT NULL,
     currency VARCHAR(3) DEFAULT 'USD',
-    status VARCHAR(20) DEFAULT 'completed',
+    order_status VARCHAR(20) DEFAULT 'pending',
     order_time_utc TIMESTAMPTZ NOT NULL,  -- 统一UTC时间存储
+    payment_time_utc TIMESTAMPTZ,
+    customer_id VARCHAR(50),
+    customer_email VARCHAR(100),
+    order_source VARCHAR(50) DEFAULT 'web',
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
@@ -164,34 +169,56 @@ CREATE TABLE dws_orders (
 ### 🎯 核心分析视图
 
 ```sql
-CREATE VIEW dws_orders_analysis_view AS
-SELECT 
-    -- 基础订单信息
-    o.id as order_id,
-    o.order_number,
-    o.amount,
+CREATE OR REPLACE VIEW dws_orders_analysis_view AS
+WITH t AS (
+  SELECT
+    -- 事实字段（做统一别名，兼容 Go）
+    o.order_id,
+    o.order_no                         AS order_number,
+    o.order_amount                     AS amount,
     o.currency,
-    o.status,
-    
-    -- 商户信息
-    m.id as merchant_id,
-    m.name as merchant_name,
-    m.timezone,
+    o.order_status                     AS status,
+
+    -- 商户字段（兼容 Go：timezone 列名）
+    m.merchant_id,
+    m.merchant_name,
     m.country,
     m.city,
-    
-    -- 时间信息（核心价值）
-    o.order_time_utc,                                    -- 原始UTC时间
-    o.order_time_utc AT TIME ZONE m.timezone as order_time_local,  -- 商户本地时间
-    (o.order_time_utc AT TIME ZONE m.timezone)::date as local_date, -- 本地日期
-    EXTRACT(hour FROM o.order_time_utc AT TIME ZONE m.timezone)::int as local_hour,
-    EXTRACT(dow FROM o.order_time_utc AT TIME ZONE m.timezone)::int as local_day_of_week,
-    TO_CHAR(o.order_time_utc AT TIME ZONE m.timezone, 'Day') as local_weekday,
-    EXTRACT(dow FROM o.order_time_utc AT TIME ZONE m.timezone) IN (0, 6) as is_weekend,
-    EXTRACT(hour FROM o.order_time_utc AT TIME ZONE m.timezone) BETWEEN 9 AND 17 as is_business_hour,
-    TO_CHAR(o.order_time_utc AT TIME ZONE m.timezone, 'TZ') as timezone_offset
-FROM dws_orders o
-JOIN dim_merchant m ON o.merchant_id = m.id;
+    m.timezone,                        -- 保留列名为 timezone，方便 Go 直接使用
+
+    -- 原始 UTC
+    o.order_time_utc,
+    o.payment_time_utc,
+
+    -- 本地时间（timestamp without time zone）
+    (o.order_time_utc   AT TIME ZONE m.timezone) AS order_time_local,
+    (o.payment_time_utc AT TIME ZONE m.timezone) AS payment_time_local,
+
+    -- 本地日期（兼容 Go：local_date）
+    (o.order_time_utc AT TIME ZONE m.timezone)::date AS local_date
+  FROM dws_orders o
+  JOIN dim_merchant m ON m.merchant_id = o.merchant_id
+)
+SELECT
+  t.*,
+
+  -- 维度拆解（整点、周几等）
+  EXTRACT(HOUR FROM t.order_time_local)::int       AS local_hour,
+  EXTRACT(DOW  FROM t.order_time_local)::int       AS local_day_of_week,   -- 0=周日, 1=周一, ...
+  TO_CHAR(t.order_time_local, 'FMDay')             AS local_weekday,       -- 英文周名，首字母大写，FM去空格
+
+  -- 是否周末 / 是否工作时间（示例：周一~周五且 09:00-18:59）
+  CASE WHEN EXTRACT(DOW FROM t.order_time_local) IN (0,6) THEN TRUE ELSE FALSE END AS is_weekend,
+  CASE
+    WHEN EXTRACT(DOW FROM t.order_time_local) BETWEEN 1 AND 5
+     AND EXTRACT(HOUR FROM t.order_time_local) BETWEEN 9 AND 18
+    THEN TRUE ELSE FALSE
+  END AS is_business_hour,
+
+  -- 时区偏移（单位：秒；可自行换算小时）
+  -- 计算：本地时间 - UTC 本地化时间（两者都是 timestamp），得到偏移量
+  EXTRACT(EPOCH FROM (t.order_time_local - (t.order_time_utc AT TIME ZONE 'UTC')))::int AS timezone_offset
+FROM t;
 ```
 
 ## 📈 使用效果对比
@@ -200,14 +227,14 @@ JOIN dim_merchant m ON o.merchant_id = m.id;
 ```sql
 -- 分析师需要手动处理时区转换
 SELECT 
-    m.name,
+    m.merchant_name,
     COUNT(*) as order_count,
     (o.order_time_utc AT TIME ZONE m.timezone)::date as local_date,
     EXTRACT(hour FROM o.order_time_utc AT TIME ZONE m.timezone) as local_hour
 FROM dws_orders o
-JOIN dim_merchant m ON o.merchant_id = m.id
+JOIN dim_merchant m ON o.merchant_id = m.merchant_id
 WHERE (o.order_time_utc AT TIME ZONE m.timezone)::date = '2024-08-19'
-GROUP BY m.name, local_date, local_hour
+GROUP BY m.merchant_name, local_date, local_hour
 ORDER BY local_hour;
 ```
 
